@@ -4,6 +4,8 @@ import json
 from lxml import etree
 import requests
 
+import asyncio
+
 BASEURL = "https://archief.amsterdam"
 DOWNLOADURL = "https://archief.amsterdam/api/download_info/0/"
 PREPAREURL = "https://archief.amsterdam/api/queue_download/0/"
@@ -38,7 +40,7 @@ def makeFilenames(start, end):
     return filenames
 
 
-def downloadScan(filename, destination='downloads/'):
+async def downloadScan(filename, destination='downloads/', skipIfExist=True):
     """Download a particular scan from the SAA.
 
     This function requests the high resolution scan from the Stadsarchief
@@ -48,7 +50,12 @@ def downloadScan(filename, destination='downloads/'):
         filename (str): Name of the scan as noted in the SAA interface (e.g. KLAC00161000001)
         destination (str, optional): Destination path (folder). Defaults to 'downloads/'.
     """
-    print("Downloading", filename)
+    if skipIfExist:
+        if os.path.exists(os.path.join(destination, filename + '.pdf')):
+            print('Already downloaded:', filename)
+            return
+
+    print('Downloading', filename)
     os.makedirs(destination, exist_ok=True)
 
     url = DOWNLOADURL + filename + ".xml"
@@ -60,9 +67,9 @@ def downloadScan(filename, destination='downloads/'):
         requests.get(url)
         print(filename,
               'Unavailable now, preparing and trying again in 10 seconds')
-        time.sleep(10)
+        await asyncio.sleep(10)
 
-        downloadScan(filename, destination)  # recursive
+        await downloadScan(filename, destination)  # recursive
     elif 'invalid item' in data:
         print('Cannot resolve:', filename)
         return
@@ -77,7 +84,7 @@ def downloadScan(filename, destination='downloads/'):
             pdffile.write(r.content)
 
 
-def fetchScans(startscan, endscan, destination='downloads/'):
+async def fetchScans(startscan, endscan, destination='downloads/'):
     """Wrapper function to download a bunch of scans based on a
     first and last scan name taken from the SAA index browser.
     
@@ -91,11 +98,14 @@ def fetchScans(startscan, endscan, destination='downloads/'):
 
     filenames = makeFilenames(startscan, endscan)
 
-    for f in filenames:
-        downloadScan(f, destination)
+    # for n, f in enumerate(filenames, 1):
+    #     print(f"Downloading {n}/{len(filenames)} {f}")
+    #     downloadScan(f, destination)
+
+    await asyncio.gather(*[downloadScan(f, destination) for f in filenames])
 
 
-def fetchScansFromFile(filepath):
+async def fetchScansFromFile(filepath):
     """Download scans from an inventory txt file. 
 
     From a txt file in which every line represents a badly formed array,
@@ -117,18 +127,31 @@ def fetchScansFromFile(filepath):
         items = line.split(",")
 
         index = items[1].replace("'", '')
-        prefix = items[26][:-3]
 
+        for item in items:
+            if item.endswith("001'"):  # mind the accent
+                prefix = item[:-3]
+                break
         for item in items:
             if item.startswith(prefix):
                 item = item.replace("'", '')
                 all_scans.append((index, item))
 
-    for i, scan in all_scans:
-        downloadScan(scan, destination=i + '/')
+    # for n, (i, scan) in enumerate(all_scans, 1):
+    #     print(f"Downloading {n}/{len(all_scans)} {i}: {scan}")
+    #     downloadScan(scan, destination=i + '/')
+
+    await asyncio.gather(
+        *[downloadScan(scan, destination=i + '/') for i, scan in all_scans])
 
 
 if __name__ == "__main__":
-    # fetchScans("KLAC00161000001", "KLAC00161000125")
 
-    fetchScansFromFile('76.txt')
+    # To run from known start and end scan name:
+    asyncio.run(
+        fetchScans("KLAC02572000001",
+                   "KLAC02572000352",
+                   destination='5028.662A/'))
+
+    # To run from a file that has several inventories from an index:
+    # asyncio.run(fetchScansFromFile('30398.txt'))
