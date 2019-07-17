@@ -149,9 +149,7 @@ if __name__ == "__main__":
 
     # To run from known start and end scan name:
     asyncio.run(
-        fetchScans("KLAC02572000001",
-                   "KLAC02572000352",
-                   destination='5028.662A/'))
+        fetchScans("KLAC01462000001", "KLAC01462000079", destination='30/'))
 
     # To run from a file that has several inventories from an index:
     # asyncio.run(fetchScansFromFile('30398.txt'))
